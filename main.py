@@ -4,7 +4,7 @@ from fuzzywuzzy import fuzz, process
 
 
 def filter_transactions(df, year, excluded_vendors):
-    return df[(df['Date'].dt.year == year) &
+    return df[(df['Date'].dt.year >= year) &
               (df['Transaction Type'] == 'debit') &
               (df['Category'] != 'Transfer') &
               (~df['Description'].isin(excluded_vendors))]
@@ -12,6 +12,8 @@ def filter_transactions(df, year, excluded_vendors):
 
 def refine_description(description, prefix_mapping):
     for prefix, generalized_name in prefix_mapping.items():
+        prefix = str(prefix)
+        description = str(description)
         if description.startswith(prefix):
             return generalized_name
     return description
@@ -57,11 +59,11 @@ def frequency_analysis(dates):
     dates.sort()
     gaps = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
     avg_gap = sum(gaps) / len(gaps)
-    if 25 <= avg_gap <= 35:
+    if 25 <= avg_gap <= 35 and len(dates) >= 3:
         return 'Monthly'
-    elif 6 <= avg_gap <= 8:
+    elif 6 <= avg_gap <= 8 and len(dates) >= 3:
         return 'Weekly'
-    elif 360 <= avg_gap <= 370:
+    elif 360 <= avg_gap <= 370 and len(dates) >= 2:
         return 'Annually'
     else:
         return 'Irregular'
@@ -71,7 +73,7 @@ def main():
     file_path = 'transactions(1).csv'
     df = pd.read_csv(file_path, parse_dates=['Date'])
     excluded_vendors = ['Betterment', 'Chase', 'Citi']
-    year = 2023
+    year = 2019
     filtered_df = filter_transactions(df, year, excluded_vendors)
 
     prefix_mapping = {
