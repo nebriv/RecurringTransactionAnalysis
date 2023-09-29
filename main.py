@@ -1,6 +1,7 @@
 import pandas as pd
 from collections import defaultdict, Counter
 from fuzzywuzzy import fuzz, process
+import re  # Importing regular expression module
 
 
 def filter_transactions(df, year, excluded_vendors):
@@ -32,10 +33,22 @@ def refined_heuristic_grouping(transactions_df, prefix_mapping):
 
         matches = process.extract(refined_description, descriptions, limit=20, scorer=fuzz.token_set_ratio)
         similar_descriptions = [match[0] for match in matches if match[1] > 80]
+        similar_indices = transactions_df[transactions_df['Original Description'].isin(similar_descriptions)].index.tolist()
 
-        similar_indices = transactions_df[
-            transactions_df['Original Description'].isin(similar_descriptions)].index.tolist()
-        heuristic_description_groups[refined_description].extend(similar_indices)
+        # Refine the grouping by comparing common keywords in the description
+        amount_indices_grouped = defaultdict(list)
+        for idx in similar_indices:
+            amount = transactions_df.loc[idx, 'Amount']
+            amount_indices_grouped[amount].append(idx)
+
+        for amount, indices in amount_indices_grouped.items():
+            if len(indices) > 1:
+                common_keywords = set(re.findall(r'\b\w+\b', refined_description.lower()))
+                indices = [idx for idx in indices if common_keywords.intersection(
+                    re.findall(r'\b\w+\b', str(transactions_df.loc[idx, 'Original Description']).lower()))]
+
+            heuristic_description_groups[refined_description].extend(indices)
+
         processed_descriptions.update(similar_descriptions)
 
     return heuristic_description_groups
@@ -86,7 +99,7 @@ def main():
     final_rows = []
     for group_key, indices in heuristic_description_groups.items():
         group = filtered_df.loc[indices]
-        category = group['Category'].mode()[0]  # Most frequent category in the group
+        category = group['Category'].mode()[0]
         dates = group['Date'].tolist()
         frequency = frequency_analysis(dates)
         final_rows.append({
@@ -98,11 +111,9 @@ def main():
         })
 
     final_df = pd.DataFrame(final_rows)
-    final_df = final_df[final_df['Transaction Count'] > 1]  # Exclude groups with a single transaction
-    final_df = final_df.sort_values(by='Transaction Count',
-                                    ascending=False)  # Sort by Transaction Count in descending order
+    final_df = final_df[final_df['Transaction Count'] > 1]
+    final_df = final_df.sort_values(by='Transaction Count', ascending=False)
 
-    # Export to CSV
     final_df.to_csv('recurring_transactions.csv', index=False)
 
 
